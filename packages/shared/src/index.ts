@@ -33,3 +33,8 @@ export {
   type CheckoutInput,
   type Order,
 } from "./schemas/order.js";
+
+export {
+  addFavoriteSchema,
+  type AddFavoriteInput,
+} from "./schemas/favorite.js";
