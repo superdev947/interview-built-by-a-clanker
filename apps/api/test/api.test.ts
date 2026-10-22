@@ -269,3 +269,34 @@ describe("N8 - email normalization", () => {
     expect(login.statusCode).toBe(200);
   });
 });
+describe("N15 - indexed lookups stay consistent", () => {
+  it("re-adds a persona after removing it or checking out", async () => {
+    const { token, email } = await register();
+    const add = () =>
+      app.inject({
+        method: "POST",
+        url: "/cart",
+        headers: auth(token),
+        payload: { personaId: "p-002", quantity: 2 },
+      });
+
+    const first = (await add()).json();
+    const firstId = first.items[0].id as string;
+    await app.inject({ method: "DELETE", url: `/cart/${firstId}`, headers: auth(token) });
+
+    const second = (await add()).json();
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0].quantity).toBe(2);
+    expect(second.items[0].id).not.toBe(firstId);
+
+    await app.inject({
+      method: "POST",
+      url: "/checkout",
+      headers: auth(token),
+      payload: { name: "Index Test", email },
+    });
+    const third = (await add()).json();
+    expect(third.items).toHaveLength(1);
+    expect(third.items[0].quantity).toBe(2);
+  });
+});

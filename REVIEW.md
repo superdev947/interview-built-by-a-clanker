@@ -4,7 +4,7 @@ A second look at `fix/storefront-bugs`, written from a devil's-advocate angle. I
 
 1. [Before / after graphs](#1-before--after) for the 17 fixes
 2. [Critique of our own changes](#2-devils-advocate-on-our-own-changes): what is weak or untested, and what the README got wrong
-3. [New bugs found](#3-new-findings-beyond-the-original-17) beyond the original 17 (now fixed, see 3.2). Each one was **reproduced** with `fastify.inject`, a browser run, or a `main`-vs-branch A/B test. None of them are guesses.
+3. [New bugs found](#3-new-findings-beyond-the-original-17) beyond the original 17 (all fixed, see 3.2). Each one was **reproduced** with `fastify.inject`, a browser run, or a `main`-vs-branch A/B test. None of them are guesses.
 
 ---
 
@@ -162,7 +162,7 @@ pie showData
 
 ### 3.2 Fixes applied
 
-All findings except N15 (performance, not worth fixing for an in-memory demo) are fixed in two commits on `fix/storefront-bugs`.
+All 15 findings are fixed on `fix/storefront-bugs`.
 
 | ID | Fix | Verified by |
 |---|---|---|
@@ -180,9 +180,9 @@ All findings except N15 (performance, not worth fixing for an in-memory demo) ar
 | N12 | `validateSearch` uses `Number.isFinite`; `0` is kept. Bad API input now returns 400 (N4). | Browser: `?maxPrice=abc` ? filter ignored, 15 cards |
 | N13 | Detail page shows Add-to-Cart and favorite errors inline (`role="alert"`). Pending states already existed. | Browser: mocked 500 ? "Cart service down" |
 | N14 | `login()` also calls `queryClient.clear()`. | Code review |
-| N15 | Not fixed (by choice). | ? |
+| N15 | Added indexes in `db.ts` (email ? user, user ? cart lines by persona, user ? orders), kept in sync on every write. Checkout now uses `db.cart.getByUserId` instead of scanning the raw map, and `cartItems` is no longer exported. | Test: re-adding after remove/checkout creates a fresh line. Benchmark at 10k users: 535 ms ? 6 ms |
 
-**Tests:** 17 API tests in total. The 7 new ones were checked against the old code (all 7 fail there) and all pass on the branch.
+**Tests:** 18 API tests in total. The 7 new ones were checked against the old code (all 7 fail there) and all pass on the branch.
 
 ---
 

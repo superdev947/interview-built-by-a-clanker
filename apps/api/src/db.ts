@@ -13,9 +13,23 @@ interface CartEntry {
 
 export const personas = new Map<string, Persona>();
 const users = new Map<string, StoredUser>();
-export const cartItems = new Map<string, CartEntry>();
+const cartItems = new Map<string, CartEntry>();
 export const favorites = new Map<string, Set<string>>(); // userId -> Set<personaId>
 const orders = new Map<string, Order>();
+
+// Secondary indexes so per-user and per-email lookups don't scan every record.
+const userIdByEmail = new Map<string, string>();
+const cartIdsByUser = new Map<string, Map<string, string>>(); // userId -> personaId -> cartItemId
+const orderIdsByUser = new Map<string, string[]>();
+
+function userCartIndex(userId: string): Map<string, string> {
+  let index = cartIdsByUser.get(userId);
+  if (!index) {
+    index = new Map();
+    cartIdsByUser.set(userId, index);
+  }
+  return index;
+}
 
 let cartItemCounter = 0;
 let orderCounter = 0;
@@ -395,27 +409,34 @@ export const db = {
       return users.get(id);
     },
     getByEmail(email: string): StoredUser | undefined {
-      return Array.from(users.values()).find((u) => u.email === email);
+      const id = userIdByEmail.get(email);
+      return id ? users.get(id) : undefined;
     },
     create(user: StoredUser): StoredUser {
       users.set(user.id, user);
+      userIdByEmail.set(user.email, user.id);
       return user;
     },
   },
 
   cart: {
     getByUserId(userId: string): CartEntry[] {
-      return Array.from(cartItems.values()).filter(
-        (item) => item.userId === userId
-      );
+      const index = cartIdsByUser.get(userId);
+      if (!index) return [];
+      const entries: CartEntry[] = [];
+      for (const id of index.values()) {
+        const entry = cartItems.get(id);
+        if (entry) entries.push(entry);
+      }
+      return entries;
     },
     getById(id: string): CartEntry | undefined {
       return cartItems.get(id);
     },
     add(userId: string, personaId: string, quantity: number): CartEntry {
-      const existing = Array.from(cartItems.values()).find(
-        (item) => item.userId === userId && item.personaId === personaId
-      );
+      const index = userCartIndex(userId);
+      const existingId = index.get(personaId);
+      const existing = existingId ? cartItems.get(existingId) : undefined;
 
       if (existing) {
         existing.quantity = Math.min(existing.quantity + quantity, MAX_CART_QUANTITY);
@@ -430,6 +451,7 @@ export const db = {
         quantity,
       };
       cartItems.set(entry.id, entry);
+      index.set(personaId, entry.id);
       return entry;
     },
     update(id: string, quantity: number): CartEntry | undefined {
@@ -440,14 +462,18 @@ export const db = {
       return item;
     },
     remove(id: string): boolean {
+      const item = cartItems.get(id);
+      if (!item) return false;
+      cartIdsByUser.get(item.userId)?.delete(item.personaId);
       return cartItems.delete(id);
     },
     clearForUser(userId: string): void {
-      for (const [id, item] of cartItems) {
-        if (item.userId === userId) {
-          cartItems.delete(id);
-        }
+      const index = cartIdsByUser.get(userId);
+      if (!index) return;
+      for (const id of index.values()) {
+        cartItems.delete(id);
       }
+      cartIdsByUser.delete(userId);
     },
   },
 
@@ -474,10 +500,14 @@ export const db = {
   orders: {
     create(order: Order): Order {
       orders.set(order.id, order);
+      const ids = orderIdsByUser.get(order.userId);
+      if (ids) ids.push(order.id);
+      else orderIdsByUser.set(order.userId, [order.id]);
       return order;
     },
     getByUserId(userId: string): Order[] {
-      return Array.from(orders.values()).filter((o) => o.userId === userId);
+      const ids = orderIdsByUser.get(userId) ?? [];
+      return ids.map((id) => orders.get(id)).filter((o): o is Order => !!o);
     },
   },
 
