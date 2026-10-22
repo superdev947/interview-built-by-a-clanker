@@ -4,7 +4,7 @@ A second look at `fix/storefront-bugs`, written from a devil's-advocate angle. I
 
 1. [Before / after graphs](#1-before--after) for the 17 fixes
 2. [Critique of our own changes](#2-devils-advocate-on-our-own-changes): what is weak or untested, and what the README got wrong
-3. [New bugs found](#3-new-findings-beyond-the-original-17) beyond the original 17. Each one was **reproduced** with `fastify.inject`, a browser run, or a `main`-vs-branch A/B test. None of them are guesses.
+3. [New bugs found](#3-new-findings-beyond-the-original-17) beyond the original 17 (now fixed, see 3.2). Each one was **reproduced** with `fastify.inject`, a browser run, or a `main`-vs-branch A/B test. None of them are guesses.
 
 ---
 
@@ -160,20 +160,29 @@ pie showData
 | N14 | ⚪ Low | Web cache | **Cached data isn't tied to a user.** Keys like `['cart']` and `['favorites']` don't include the user id. Our `logout()` clears the cache, but the 401 path in `AuthProvider` and `login()` don't. | Code inspection. Mostly covered by the Bug 15 fix. |
 | N15 | ⚪ Low | API perf | **Every lookup scans all records.** `users.getByEmail` and `cart.getByUserId` loop over everything. Fine for a demo, but it gets slower as data grows. | Code inspection. |
 
-### 3.2 Recommended fixes (not applied)
+### 3.2 Fixes applied
 
-| ID | Fix |
-|---|---|
-| N1 | Use `bcrypt`/`argon2` (or at least `crypto.scrypt` with a salt) and compare with `timingSafeEqual`. |
-| N2, N3 | Use `crypto.randomUUID()` for user ids, read the JWT secret from `process.env`, `sign(..., { expiresIn: "1h" })`, and have `authenticate` reject tokens whose `id` isn't in `db.users`. |
-| N4, N12 | `personaFilterSchema.safeParse(request.query)` in `GET /personas` (it already exists and already uses `z.coerce.number()`). In `validateSearch`, use `Number.isFinite` instead of truthiness. |
-| N5 | Add `.max(100)` to `addToCartSchema.quantity` and `updateCartItemSchema.quantity`, and cap the merged total in `cart.add`. |
-| N6 | In `api.ts`: `typeof body.error === "string" ? body.error : body.error?.formErrors?.[0] ?? Object.values(body.error?.fieldErrors ?? {}).flat()[0] ?? "Invalid input"`. |
-| N7 | In pages that require a login, render a skeleton while `isLoading` is true. Do the same for the nav. |
-| N8 | Lower-case emails in the Zod schema (`z.string().email().toLowerCase()`). |
-| N9, N14 | Handle 401 in one place: on any 401 from `request()`, call `logout()` (for example through an event or callback that `AuthProvider` registers). Also clear the cache in `login()`. |
-| N10 | Add `errorComponent` to the root route. |
-| N13 | Add `onError` toasts and disable buttons while `isPending`. |
+All findings except N15 (performance, not worth fixing for an in-memory demo) are fixed in two commits on `fix/storefront-bugs`.
+
+| ID | Fix | Verified by |
+|---|---|---|
+| N1 | Salted `crypto.scrypt` hashes (`scrypt$salt$hash`), compared with `timingSafeEqual`. | Test: `AaAaAa`/`BBBBBB` login ? 401 |
+| N2 | User ids are `crypto.randomUUID()`. Tokens expire (`JWT_EXPIRES_IN`, default `1h`). | Test: token has `exp`, id is a UUID |
+| N3 | Secret comes from `JWT_SECRET` (startup fails in production without it). `authenticate` returns 401 if the user id in the token doesn't exist. | Test: forged `user-999` token ? 401 |
+| N4 | `GET /personas` validates with `personaFilterSchema` and returns 400 on bad input. | Tests: `?q=a&q=b` ? 400, `?maxPrice=abc` ? 400 |
+| N5 | `MAX_CART_QUANTITY = 100` in `@acme/shared`, enforced by both cart schemas and capped when merging in `cart.add`. | Test: `1e15` ? 400; 3 ? 50 ? 100 |
+| N6 | `api.ts` turns Zod's flattened error object into its first message, e.g. `email: Invalid email`. | Browser: checkout shows `email: Invalid email` |
+| N7 | The root layout shows a skeleton in the nav and page while `AuthProvider.isLoading` is true. | Browser: `/auth/me` delayed 1.5 s, no "Sign in" flash, then the cart renders |
+| N8 | `registerSchema`/`loginSchema` trim and lower-case emails. | Test: `Casey@` then `casey@` ? 409; `CASEY@` login ? 200 |
+| N9 | Any 401 on a request that sent a token calls `logout()` through `setUnauthorizedHandler`. | Browser: tampered token ? token removed, nav shows "Sign in" |
+| N10 | Root `errorComponent` with **Try again** / **Back to browse**. | Browser: a malformed persona shows the branded error page |
+| N11 | (Already fixed by C7.) | ? |
+| N12 | `validateSearch` uses `Number.isFinite`; `0` is kept. Bad API input now returns 400 (N4). | Browser: `?maxPrice=abc` ? filter ignored, 15 cards |
+| N13 | Detail page shows Add-to-Cart and favorite errors inline (`role="alert"`). Pending states already existed. | Browser: mocked 500 ? "Cart service down" |
+| N14 | `login()` also calls `queryClient.clear()`. | Code review |
+| N15 | Not fixed (by choice). | ? |
+
+**Tests:** 17 API tests in total. The 7 new ones were checked against the old code (all 7 fail there) and all pass on the branch.
 
 ---
 

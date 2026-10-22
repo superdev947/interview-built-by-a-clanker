@@ -403,4 +403,4 @@ curl -s -X POST http://localhost:3001/auth/register \
 | 16 | Web | `-` allowed at qty 1 | cart page | Fixed |
 | 17 | Web | Empty JSON body on DELETE | DELETE with JSON header | Fixed |
 
-> A second-pass review (before/after diagrams, critique of these fixes, and 15 additional findings) is in [REVIEW.md](./REVIEW.md).
+> A second-pass review (before/after diagrams, critique of these fixes, and 15 additional findings, 14 of them now fixed) is in [REVIEW.md](./REVIEW.md). Configure `JWT_SECRET` (required when `NODE_ENV=production`) and optionally `JWT_EXPIRES_IN` (default `1h`).
