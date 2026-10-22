@@ -189,6 +189,11 @@ function PersonaDetailPage() {
                     />
                   </svg>
                 </button>
+                {(addToCart.error || toggleFavorite.error) && (
+                  <p role="alert" className="text-sm text-red-600">
+                    {(addToCart.error ?? toggleFavorite.error)?.message}
+                  </p>
+                )}
               </div>
             )}
 

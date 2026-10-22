@@ -6,10 +6,31 @@ import type { Cart } from "@acme/shared";
 
 export const Route = createRootRoute({
   component: RootLayout,
+  errorComponent: RootError,
 });
 
+function RootError({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <div className="max-w-lg mx-auto text-center py-24 px-4">
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">Something went wrong</h1>
+      <p className="text-gray-600 mb-6">{error.message}</p>
+      <div className="flex justify-center gap-4">
+        <button
+          onClick={reset}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          Try again
+        </button>
+        <a href="/" className="px-4 py-2 text-indigo-600 hover:text-indigo-700">
+          Back to browse
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function RootLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
   const { data: cart } = useQuery({
@@ -51,7 +72,9 @@ function RootLayout() {
             </div>
 
             <div className="flex items-center gap-4">
-              {user ? (
+              {authLoading ? (
+                <div className="h-8 w-32 bg-gray-100 rounded-lg animate-pulse" />
+              ) : user ? (
                 <>
                   <Link
                     to="/cart"
@@ -113,7 +136,11 @@ function RootLayout() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Outlet />
+        {authLoading ? (
+          <div className="animate-pulse h-96 bg-gray-100 rounded-xl" />
+        ) : (
+          <Outlet />
+        )}
       </main>
     </div>
   );

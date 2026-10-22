@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { User, AuthResponse } from "@acme/shared";
-import { api, ApiError } from "./api";
+import { api, ApiError, setUnauthorizedHandler } from "./api";
 import { queryClient } from "./queryClient";
 
 interface AuthContextType {
@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const login = useCallback((response: AuthResponse) => {
+    queryClient.clear();
     localStorage.setItem("auth_token", response.token);
     setToken(response.token);
     setUser(response.user);
@@ -59,6 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     queryClient.clear();
   }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>

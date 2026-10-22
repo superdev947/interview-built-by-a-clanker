@@ -14,6 +14,29 @@ function getToken(): string | null {
   return localStorage.getItem("auth_token");
 }
 
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
+interface FlattenedError {
+  formErrors?: string[];
+  fieldErrors?: Record<string, string[] | undefined>;
+}
+
+function errorMessage(error: unknown, status: number): string {
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const { formErrors = [], fieldErrors = {} } = error as FlattenedError;
+    if (formErrors[0]) return formErrors[0];
+    for (const [field, messages] of Object.entries(fieldErrors)) {
+      if (messages?.[0]) return `${field}: ${messages[0]}`;
+    }
+  }
+  return `Request failed: ${status}`;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -34,11 +57,11 @@ async function request<T>(
   });
 
   if (!response.ok) {
+    if (response.status === 401 && token) {
+      onUnauthorized?.();
+    }
     const body = await response.json().catch(() => ({}));
-    throw new ApiError(
-      response.status,
-      body.error ?? `Request failed: ${response.status}`,
-    );
+    throw new ApiError(response.status, errorMessage(body.error, response.status));
   }
 
   return response.json() as Promise<T>;
