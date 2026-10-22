@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { personaSchema } from "./persona.js";
 
+export const MAX_CART_QUANTITY = 100;
+
 export const cartItemSchema = z.object({
   id: z.string(),
   personaId: z.string(),
@@ -12,13 +14,13 @@ export type CartItem = z.infer<typeof cartItemSchema>;
 
 export const addToCartSchema = z.object({
   personaId: z.string(),
-  quantity: z.number().int().min(1).default(1),
+  quantity: z.number().int().min(1).max(MAX_CART_QUANTITY).default(1),
 });
 
 export type AddToCartInput = z.infer<typeof addToCartSchema>;
 
 export const updateCartItemSchema = z.object({
-  quantity: z.number().int().min(1),
+  quantity: z.number().int().min(1).max(MAX_CART_QUANTITY),
 });
 
 export type UpdateCartItemInput = z.infer<typeof updateCartItemSchema>;

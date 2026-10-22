@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { db } from "../db.js";
 
 export async function authenticate(
   request: FastifyRequest,
@@ -7,6 +8,11 @@ export async function authenticate(
   try {
     await request.jwtVerify();
   } catch {
+    return reply.status(401).send({ error: "Unauthorized" });
+  }
+
+  const { id } = request.user as { id?: string };
+  if (!id || !db.users.getById(id)) {
     return reply.status(401).send({ error: "Unauthorized" });
   }
 }

@@ -1,18 +1,23 @@
 import type { FastifyInstance } from "fastify";
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { registerSchema, loginSchema, type AuthResponse } from "@acme/shared";
 import { db } from "../db.js";
 import { authenticate } from "../middleware/auth.js";
 
-let userCounter = 0;
+const KEY_LENGTH = 64;
 
-function simpleHash(password: string): string {
-  let hash = 0;
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return `hashed_${hash}`;
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, KEY_LENGTH).toString("hex");
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const [scheme, salt, hash] = stored.split("$");
+  if (scheme !== "scrypt" || !salt || !hash) return false;
+  const expected = Buffer.from(hash, "hex");
+  const actual = scryptSync(password, salt, expected.length);
+  return timingSafeEqual(actual, expected);
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -28,12 +33,12 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: "Email already registered" });
     }
 
-    const id = `user-${++userCounter}`;
+    const id = randomUUID();
     const user = db.users.create({
       id,
       username,
       email,
-      passwordHash: simpleHash(password),
+      passwordHash: hashPassword(password),
     });
 
     const token = app.jwt.sign({ id: user.id, email: user.email });
@@ -54,7 +59,7 @@ export async function authRoutes(app: FastifyInstance) {
     const { email, password } = parsed.data;
     const user = db.users.getByEmail(email);
 
-    if (!user || user.passwordHash !== simpleHash(password)) {
+    if (!user || !verifyPassword(password, user.passwordHash)) {
       return reply.status(401).send({ error: "Invalid email or password" });
     }
 

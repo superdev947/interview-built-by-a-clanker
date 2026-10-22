@@ -174,3 +174,98 @@ describe("Bug 17 - body-less DELETE", () => {
     expect(withoutHeader.statusCode).toBe(200);
   });
 });
+
+describe("N1 - password hashing", () => {
+  it("rejects a password that collided under the old 32-bit hash", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { username: "victim", email: "victim@test.dev", password: "AaAaAa" },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "victim@test.dev", password: "BBBBBB" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("N2/N3 - token hardening", () => {
+  it("issues tokens with an expiry and a non-sequential user id", async () => {
+    const { token } = await register();
+    const decoded = app.jwt.decode<{ id: string; exp?: number }>(token)!;
+    expect(decoded.exp).toBeTypeOf("number");
+    expect(decoded.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("rejects a validly signed token for a user that does not exist", async () => {
+    const ghost = app.jwt.sign({ id: "user-999", email: "ghost@test.dev" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/cart",
+      headers: auth(ghost),
+      payload: { personaId: "p-001", quantity: 1 },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("N4 - search query validation", () => {
+  it("returns 400 instead of 500 for a repeated q parameter", async () => {
+    const res = await app.inject({ method: "GET", url: "/personas?q=a&q=b" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for a non-numeric price", async () => {
+    const res = await app.inject({ method: "GET", url: "/personas?maxPrice=abc" });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("N5 - quantity cap", () => {
+  it("rejects absurd quantities and caps merged quantities", async () => {
+    const { token } = await register();
+    const huge = await app.inject({
+      method: "POST",
+      url: "/cart",
+      headers: auth(token),
+      payload: { personaId: "p-001", quantity: 1e15 },
+    });
+    expect(huge.statusCode).toBe(400);
+
+    for (let i = 0; i < 3; i++) {
+      await app.inject({
+        method: "POST",
+        url: "/cart",
+        headers: auth(token),
+        payload: { personaId: "p-001", quantity: 50 },
+      });
+    }
+    const cart = await app.inject({ method: "GET", url: "/cart", headers: auth(token) });
+    expect(cart.json().items[0].quantity).toBe(100);
+  });
+});
+
+describe("N8 - email normalization", () => {
+  it("treats emails case-insensitively", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { username: "casey", email: "Casey@Test.dev", password: "secret1" },
+    });
+    expect(first.statusCode).toBe(201);
+    const dup = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { username: "casey2", email: "casey@test.dev", password: "secret1" },
+    });
+    expect(dup.statusCode).toBe(409);
+    const login = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "CASEY@TEST.DEV", password: "secret1" },
+    });
+    expect(login.statusCode).toBe(200);
+  });
+});

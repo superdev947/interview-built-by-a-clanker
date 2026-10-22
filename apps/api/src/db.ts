@@ -1,4 +1,4 @@
-import type { Persona, User, CartItem, Order } from "@acme/shared";
+import { MAX_CART_QUANTITY, type Persona, type User, type CartItem, type Order } from "@acme/shared";
 
 interface StoredUser extends User {
   passwordHash: string;
@@ -418,7 +418,7 @@ export const db = {
       );
 
       if (existing) {
-        existing.quantity += quantity;
+        existing.quantity = Math.min(existing.quantity + quantity, MAX_CART_QUANTITY);
         cartItems.set(existing.id, existing);
         return existing;
       }
