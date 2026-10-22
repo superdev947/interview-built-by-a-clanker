@@ -201,7 +201,7 @@ curl -s -X POST http://localhost:3001/auth/register \
 | **What** | `ENFORCE_AUTH` defaults to `false`. When false, `authenticate()` returns early **without** calling `request.jwtVerify()`, so `request.user` is `null`. Every route handler then does `const { id } = request.user` and throws. |
 | **Verify** | `curl -i http://localhost:3001/cart -H "Authorization: Bearer $TOKEN"` (API started *without* `ENFORCE_AUTH`) |
 | **Expected** | `200 {"items":[],"total":0}` |
-| **Actual** | `500 {"error":"Cannot destructure property 'id' of 'request.user' as it is null."}` - same for `/favorites`, `/checkout`, `/orders`. |
+| **Actual** | `500 {"error":"Cannot destructure property 'id' of 'request.user' as it is null."}` - same for `/favorites` and `/checkout`. |
 | **Fix** | Always call `await request.jwtVerify()` (the `ENFORCE_AUTH` bypass was removed). Missing/invalid tokens now get `401`. |
 
 #### Bug 3 - `authenticate` doesn't stop the request after a 401
@@ -212,7 +212,7 @@ curl -s -X POST http://localhost:3001/auth/register \
 | **What** | In Fastify hooks you must `return reply` (or `throw`) to short-circuit; otherwise the route handler still runs after the 401 has been sent. |
 | **Verify** | Start with `ENFORCE_AUTH=true`, then `curl -i http://localhost:3001/cart -H "Authorization: Bearer garbage"` and watch the API console. |
 | **Expected** | 401 and the handler never executes. |
-| **Actual** | 401 is sent, but the handler still runs and logs `FST_ERR_REP_ALREADY_SENT` / "Reply was already sent" warnings. |
+| **Actual** | *Not reproducible on Fastify 5* (it stops after a reply is sent from an async hook; see REVIEW.md C1). On older versions: 401 is sent, but the handler still runs and logs `FST_ERR_REP_ALREADY_SENT` / "Reply was already sent" warnings. |
 | **Fix** | `return reply.code(401).send({ error: "Unauthorized" })`. |
 
 #### Bug 4 - `minPrice` filter is inverted
@@ -242,7 +242,7 @@ curl -s -X POST http://localhost:3001/auth/register \
 | | |
 |---|---|
 | **Where** | `apps/api/src/routes/checkout.ts` |
-| **What** | An order is created and stock decremented, but `cart.clearForUser(userId)` (which exists in `db.ts`) is never called. Checking out twice double-charges and double-decrements inventory. |
+| **What** | An order is created, but `cart.clearForUser(userId)` (which exists in `db.ts`) is never called. Checking out again creates a duplicate order for the same items. |
 | **Verify** | Run API with `ENFORCE_AUTH=true`, then:<br>`curl -s -X POST localhost:3001/cart -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"personaId":"p-001","quantity":1}'`<br>`curl -s -X POST localhost:3001/checkout -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"Alice","email":"a@b.com"}'`<br>`curl -s localhost:3001/cart -H "Authorization: Bearer $TOKEN"` |
 | **Expected** | Final `GET /cart` -> `{"items":[],"total":0}` |
 | **Actual** | Cart still contains `p-001`; a second checkout creates a second order. |
@@ -402,3 +402,5 @@ curl -s -X POST http://localhost:3001/auth/register \
 | 15 | Web | Logout persists after reload | logout + F5 | Fixed |
 | 16 | Web | `-` allowed at qty 1 | cart page | Fixed |
 | 17 | Web | Empty JSON body on DELETE | DELETE with JSON header | Fixed |
+
+> A second-pass review (before/after diagrams, critique of these fixes, and 15 additional findings) is in [REVIEW.md](./REVIEW.md).
